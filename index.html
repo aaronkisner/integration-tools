@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Distance to Angle Conversion</title>
+
+  <style>
+    :root {
+      --blue: #1976d2;
+      --blue-dark: #12305a;
+      --border: #c5ccd6;
+      --result-border: #9fc5ff;
+      --bg: #f3f3f3;
+      --text: #222;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 18px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 520px;
+      margin: 0 auto;
+      background: white;
+      padding: 24px;
+      border-radius: 22px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.16);
+    }
+
+    h1 {
+      font-size: 30px;
+      margin: 0 0 28px;
+      text-align: center;
+      color: var(--blue-dark);
+      font-weight: 800;
+    }
+
+    label {
+      display: block;
+      margin-top: 22px;
+      margin-bottom: 8px;
+      font-size: 20px;
+      font-weight: 500;
+      text-align: left;
+    }
+
+    input,
+    .result-field {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 58px;
+      padding: 12px 16px;
+      font-size: 24px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: white;
+      color: #222;
+      text-align: left;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(25,118,210,0.14);
+    }
+
+    .buttons {
+      display: flex;
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    button {
+      flex: 1;
+      padding: 16px;
+      font-size: 22px;
+      font-weight: bold;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .calculate {
+      background: var(--blue);
+      color: white;
+      border: 1px solid #0f62b6;
+    }
+
+    .clear {
+      background: #f5f5f5;
+      color: #222;
+      border: 1px solid #c6c6c6;
+    }
+
+    .error {
+      margin-top: 18px;
+      padding: 12px;
+      background: #ffe5e5;
+      color: #9b0000;
+      border-radius: 10px;
+      font-size: 17px;
+      display: none;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 30px 0 14px;
+      color: var(--blue);
+      font-size: 22px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    .section-title::before,
+    .section-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #c8ced8;
+    }
+
+    .result-label {
+      display: block;
+      margin-top: 22px;
+      margin-bottom: 8px;
+      font-size: 20px;
+      font-weight: 500;
+      text-align: left;
+    }
+
+    .result-field {
+      border-color: var(--result-border);
+      background: #fbfdff;
+      font-weight: bold;
+      color: #1b1b1b;
+    }
+
+    .footer-banner {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #d9d9d9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      font-size: 22px;
+      font-weight: bold;
+      color: var(--blue-dark);
+      text-align: center;
+      direction: rtl;
+    }
+
+    .cannon {
+      width: 42px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .cannon svg {
+      width: 42px;
+      height: 42px;
+      stroke: var(--blue-dark);
+      fill: none;
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    @media (max-width: 420px) {
+      body {
+        padding: 10px;
+      }
+
+      .container {
+        padding: 20px;
+        border-radius: 18px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      button {
+        font-size: 20px;
+      }
+
+      input,
+      .result-field {
+        font-size: 22px;
+      }
+
+      .footer-banner {
+        font-size: 19px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Distance to Angle Conversion</h1>
+
+    <label for="radius">Radius [mm]</label>
+    <input id="radius" type="number" value="100" step="0.001" inputmode="decimal" />
+
+    <label for="movement">Measured Movement [mm]</label>
+    <input id="movement" type="number" step="0.001" inputmode="decimal" />
+
+    <div class="buttons">
+      <button class="calculate" onclick="calculate()">Calculate</button>
+      <button class="clear" onclick="clearFields()">Clear</button>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <div class="section-title">Results</div>
+
+    <div class="result-label">Angle [°]</div>
+    <div id="degrees" class="result-field"></div>
+
+    <div class="result-label">Angle [mrad]</div>
+    <div id="mrad" class="result-field"></div>
+
+    <div class="footer-banner">
+      <span class="cannon" aria-hidden="true">
+        <svg viewBox="0 0 64 64">
+          <path d="M14 42h28" />
+          <path d="M25 42l-8 10" />
+          <path d="M42 42l8 10" />
+          <circle cx="20" cy="52" r="6" />
+          <circle cx="46" cy="52" r="6" />
+          <path d="M28 26l24-8c3-1 6 1 7 4s-1 6-4 7l-24 8z" />
+          <path d="M25 27l7 12" />
+          <path d="M12 39c7-6 12-10 18-12" />
+          <path d="M8 46c5-2 9-3 14-4" />
+        </svg>
+      </span>
+      <span>תותחים יש רק באינטגרציה</span>
+    </div>
+  </div>
+
+  <script>
+    function calculate() {
+      const radiusText = document.getElementById("radius").value;
+      const movementText = document.getElementById("movement").value;
+
+      const radius = Number(radiusText);
+      const movement = Number(movementText);
+
+      if (radiusText === "" || isNaN(radius) || radius <= 0) {
+        showError("Please enter a radius greater than 0.");
+        return;
+      }
+
+      if (movementText === "" || isNaN(movement)) {
+        showError("Please enter the measured movement.");
+        return;
+      }
+
+      if (movement < 0) {
+        showError("The measured movement must be a positive value.");
+        return;
+      }
+
+      if (movement > 2 * radius) {
+        showError("The measured movement is too large for the selected radius. It must be less than or equal to 2r.");
+        return;
+      }
+
+      const thetaRad = 2 * Math.asin(movement / (2 * radius));
+      const degrees = thetaRad * 180 / Math.PI;
+      const mrad = thetaRad * 1000;
+
+      document.getElementById("error").style.display = "none";
+      document.getElementById("degrees").innerText = degrees.toFixed(3) + "°";
+      document.getElementById("mrad").innerText = mrad.toFixed(3) + " mrad";
+    }
+
+    function clearFields() {
+      document.getElementById("radius").value = "100";
+      document.getElementById("movement").value = "";
+      document.getElementById("degrees").innerText = "";
+      document.getElementById("mrad").innerText = "";
+      document.getElementById("error").style.display = "none";
+    }
+
+    function showError(message) {
+      const errorBox = document.getElementById("error");
+      errorBox.innerText = message;
+      errorBox.style.display = "block";
+      document.getElementById("degrees").innerText = "";
+      document.getElementById("mrad").innerText = "";
+    }
+
+    document.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        calculate();
+      }
+    });
+  </script>
+</body>
+</html>
