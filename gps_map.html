@@ -36,10 +36,66 @@ function utm(lat,lon){
 function hav(a,b){const R=6371000,p=x=>x*Math.PI/180,dLat=p(b.lat-a.lat),dLon=p(b.lng-a.lng),la1=p(a.lat),la2=p(b.lat);const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
 function bear(a,b){const p=x=>x*Math.PI/180,d=x=>x*180/Math.PI,y=Math.sin(p(b.lng-a.lng))*Math.cos(p(b.lat)),x=Math.cos(p(a.lat))*Math.sin(p(b.lat))-Math.sin(p(a.lat))*Math.cos(p(b.lat))*Math.cos(p(b.lng-a.lng));return (d(Math.atan2(y,x))+360)%360;}
 function updateBetween(){if(link){map.removeLayer(link);link=null}if(!me||!selected){$('dist').textContent='Distance: —';$('bearing').textContent='Bearing: —';return}let d=hav(me,selected);$('dist').textContent='Distance: '+(d<1000?Math.round(d)+' m':(d/1000).toFixed(2)+' km');$('bearing').textContent='Bearing: '+bear(me,selected).toFixed(1)+'°';link=L.polyline([me,selected],{weight:2,dashArray:'6 7',opacity:.75}).addTo(map);}
-function setSelected(ll){selected={lat:ll.lat,lng:ll.lng};if(!selMarker)selMarker=L.marker(ll,{draggable:true}).addTo(map);else selMarker.setLatLng(ll);selMarker.on('drag',e=>setSelected(e.target.getLatLng()));$('selLL').textContent=`${fmt(ll.lat)}, ${fmt(ll.lng)}`;$('selUtm').textContent='UTM: '+utm(ll.lat,ll.lng);$('selExtra').textContent='WGS84';updateBetween();}
+let elevationRequest=0;
+async function loadElevation(ll){
+ const request=++elevationRequest;
+ $('selExtra').textContent='Elevation: loading…';
+ try{
+   const url=`https://api.trailsplits.com/tiles/v1/elevation/current/sample?encoding=mapbox&points=${encodeURIComponent(ll.lat+','+ll.lng)}`;
+   const r=await fetch(url);
+   if(!r.ok) throw new Error('HTTP '+r.status);
+   const data=await r.json();
+   if(request!==elevationRequest) return;
+   const elev=data && Array.isArray(data.points) && data.points[0] ? data.points[0].elevation_m : null;
+   $('selExtra').textContent=(elev==null||!Number.isFinite(Number(elev)))
+     ? 'Elevation: unavailable'
+     : `Elevation: ${Number(elev).toFixed(1)} m • Copernicus DEM 30 m`;
+ }catch(e){
+   if(request===elevationRequest) $('selExtra').textContent='Elevation: unavailable';
+ }
+}
+function updateSelectedData(ll,fetchElevation=true){
+ selected={lat:ll.lat,lng:ll.lng};
+ $('selLL').textContent=`${fmt(ll.lat)}, ${fmt(ll.lng)}`;
+ $('selUtm').textContent='UTM: '+utm(ll.lat,ll.lng);
+ updateBetween();
+ if(fetchElevation) loadElevation(ll);
+}
+function createSelectedMarker(ll){
+ selMarker=L.marker(ll,{draggable:true}).addTo(map);
+ let restoreMapGestures=null;
+ selMarker.on('dragstart',()=>{
+   restoreMapGestures={
+     dragging:map.dragging.enabled(),
+     touchZoom:map.touchZoom && map.touchZoom.enabled(),
+     doubleClickZoom:map.doubleClickZoom.enabled(),
+     scrollWheelZoom:map.scrollWheelZoom.enabled()
+   };
+   if(map.dragging) map.dragging.disable();
+   if(map.touchZoom) map.touchZoom.disable();
+   map.doubleClickZoom.disable();
+   map.scrollWheelZoom.disable();
+ });
+ selMarker.on('dragend',e=>{
+   const ll=e.target.getLatLng();
+   if(restoreMapGestures){
+     if(restoreMapGestures.dragging && map.dragging) map.dragging.enable();
+     if(restoreMapGestures.touchZoom && map.touchZoom) map.touchZoom.enable();
+     if(restoreMapGestures.doubleClickZoom) map.doubleClickZoom.enable();
+     if(restoreMapGestures.scrollWheelZoom) map.scrollWheelZoom.enable();
+   }
+   restoreMapGestures=null;
+   updateSelectedData(ll,true);
+ });
+}
+function setSelected(ll){
+ if(!selMarker) createSelectedMarker(ll);
+ else selMarker.setLatLng(ll);
+ updateSelectedData(ll,true);
+}
 map.on('click',e=>setSelected(e.latlng));
 if(navigator.geolocation){navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude};const ll=[me.lat,me.lng];if(!meMarker){meMarker=L.circleMarker(ll,{radius:8,weight:3,fillOpacity:1}).addTo(map).bindTooltip('YOU');accCircle=L.circle(ll,{weight:1,fillOpacity:.08}).addTo(map);}else{meMarker.setLatLng(ll);accCircle.setLatLng(ll)}accCircle.setRadius(p.coords.accuracy||0);$('meLL').textContent=`${fmt(me.lat)}, ${fmt(me.lng)}`;$('meUtm').textContent='UTM: '+utm(me.lat,me.lng);let parts=[`Accuracy: ${Math.round(p.coords.accuracy)} m`];if(p.coords.altitude!=null)parts.push(`Alt: ${Math.round(p.coords.altitude)} m`);if(p.coords.speed!=null)parts.push(`Speed: ${(p.coords.speed*3.6).toFixed(1)} km/h`);$('meExtra').textContent=parts.join(' · ');updateBetween();if(firstFix){map.setView(ll,18);firstFix=false}},e=>{$('meLL').textContent='GPS error: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:15000});}else $('meLL').textContent='Geolocation not supported';
 $('myBtn').onclick=()=>{if(me)map.setView([me.lat,me.lng],18)};
 $('fitBtn').onclick=()=>{if(me&&selected)map.fitBounds([[me.lat,me.lng],[selected.lat,selected.lng]],{padding:[60,60]});else if(me)map.setView([me.lat,me.lng],18)};
-$('clearBtn').onclick=()=>{selected=null;if(selMarker){map.removeLayer(selMarker);selMarker=null}if(link){map.removeLayer(link);link=null}$('selLL').textContent='Tap anywhere on map';$('selUtm').textContent='UTM: —';$('selExtra').textContent='—';updateBetween()};
+$('clearBtn').onclick=()=>{elevationRequest++;selected=null;if(selMarker){map.removeLayer(selMarker);selMarker=null}if(link){map.removeLayer(link);link=null}$('selLL').textContent='Tap anywhere on map';$('selUtm').textContent='UTM: —';$('selExtra').textContent='—';updateBetween()};
 </script></body></html>
