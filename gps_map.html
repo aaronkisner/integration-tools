@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>GPS Field Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#111;color:#fff}#map{height:100%;width:100%}
+.panel{position:absolute;z-index:1000;left:10px;right:10px;top:10px;background:rgba(20,20,20,.91);border-radius:14px;padding:10px 12px;box-shadow:0 3px 16px #0008;font-size:13px;backdrop-filter:blur(6px)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}.box{min-width:0}.title{font-weight:800;font-size:14px;margin-bottom:3px}.blue{color:#66b8ff}.red{color:#ff7777}.line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.between{grid-column:1/-1;border-top:1px solid #555;margin-top:2px;padding-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+.controls{position:absolute;z-index:1000;right:10px;bottom:24px;display:flex;flex-direction:column;gap:8px}.btn{border:0;border-radius:12px;padding:11px 13px;background:#fff;color:#111;font-weight:750;box-shadow:0 2px 10px #0007;font-size:14px}.btn:active{transform:scale(.97)}
+.hint{position:absolute;z-index:999;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.72);padding:8px 12px;border-radius:20px;font-size:12px;white-space:nowrap;pointer-events:none}.leaflet-control-zoom{margin-top:155px!important}
+@media(max-width:520px){.panel{font-size:12px}.grid{gap:7px}.between{gap:9px}.leaflet-control-zoom{margin-top:175px!important}}
+</style>
+</head><body>
+<div id="map"></div>
+<div class="panel"><div class="grid">
+<div class="box"><div class="title blue">● YOU — LIVE GPS</div><div id="meLL" class="line">Waiting for GPS…</div><div id="meUtm" class="line">UTM: —</div><div id="meExtra" class="line">Accuracy: —</div></div>
+<div class="box"><div class="title red">● SELECTED POINT</div><div id="selLL" class="line">Tap anywhere on map</div><div id="selUtm" class="line">UTM: —</div><div id="selExtra" class="line">—</div></div>
+<div class="between"><span id="dist">Distance: —</span><span id="bearing">Bearing: —</span></div>
+</div></div>
+<div class="controls"><button class="btn" id="myBtn">📍 My location</button><button class="btn" id="fitBtn">↔ Show both</button><button class="btn" id="clearBtn">✕ Clear point</button></div>
+<div class="hint">Tap the map to select a point</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+<script>
+const map=L.map('map',{zoomControl:true}).setView([31.8,34.8],8);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+let me=null, selected=null, meMarker=null, accCircle=null, selMarker=null, link=null, firstFix=true;
+const $=id=>document.getElementById(id), fmt=n=>Number(n).toFixed(6);
+function utm(lat,lon){
+ const zone=Math.floor((lon+180)/6)+1, north=lat>=0;
+ const def=`+proj=utm +zone=${zone} ${north?'':' +south'} +datum=WGS84 +units=m +no_defs`;
+ try{const [e,n]=proj4('EPSG:4326',def,[lon,lat]);return `${zone}${north?'N':'S'}  E ${Math.round(e)}  N ${Math.round(n)}`;}catch(e){return '—'}
+}
+function hav(a,b){const R=6371000,p=x=>x*Math.PI/180,dLat=p(b.lat-a.lat),dLon=p(b.lng-a.lng),la1=p(a.lat),la2=p(b.lat);const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+function bear(a,b){const p=x=>x*Math.PI/180,d=x=>x*180/Math.PI,y=Math.sin(p(b.lng-a.lng))*Math.cos(p(b.lat)),x=Math.cos(p(a.lat))*Math.sin(p(b.lat))-Math.sin(p(a.lat))*Math.cos(p(b.lat))*Math.cos(p(b.lng-a.lng));return (d(Math.atan2(y,x))+360)%360;}
+function updateBetween(){if(link){map.removeLayer(link);link=null}if(!me||!selected){$('dist').textContent='Distance: —';$('bearing').textContent='Bearing: —';return}let d=hav(me,selected);$('dist').textContent='Distance: '+(d<1000?Math.round(d)+' m':(d/1000).toFixed(2)+' km');$('bearing').textContent='Bearing: '+bear(me,selected).toFixed(1)+'°';link=L.polyline([me,selected],{weight:2,dashArray:'6 7',opacity:.75}).addTo(map);}
+function setSelected(ll){selected={lat:ll.lat,lng:ll.lng};if(!selMarker)selMarker=L.marker(ll,{draggable:true}).addTo(map);else selMarker.setLatLng(ll);selMarker.on('drag',e=>setSelected(e.target.getLatLng()));$('selLL').textContent=`${fmt(ll.lat)}, ${fmt(ll.lng)}`;$('selUtm').textContent='UTM: '+utm(ll.lat,ll.lng);$('selExtra').textContent='WGS84';updateBetween();}
+map.on('click',e=>setSelected(e.latlng));
+if(navigator.geolocation){navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude};const ll=[me.lat,me.lng];if(!meMarker){meMarker=L.circleMarker(ll,{radius:8,weight:3,fillOpacity:1}).addTo(map).bindTooltip('YOU');accCircle=L.circle(ll,{weight:1,fillOpacity:.08}).addTo(map);}else{meMarker.setLatLng(ll);accCircle.setLatLng(ll)}accCircle.setRadius(p.coords.accuracy||0);$('meLL').textContent=`${fmt(me.lat)}, ${fmt(me.lng)}`;$('meUtm').textContent='UTM: '+utm(me.lat,me.lng);let parts=[`Accuracy: ${Math.round(p.coords.accuracy)} m`];if(p.coords.altitude!=null)parts.push(`Alt: ${Math.round(p.coords.altitude)} m`);if(p.coords.speed!=null)parts.push(`Speed: ${(p.coords.speed*3.6).toFixed(1)} km/h`);$('meExtra').textContent=parts.join(' · ');updateBetween();if(firstFix){map.setView(ll,18);firstFix=false}},e=>{$('meLL').textContent='GPS error: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:15000});}else $('meLL').textContent='Geolocation not supported';
+$('myBtn').onclick=()=>{if(me)map.setView([me.lat,me.lng],18)};
+$('fitBtn').onclick=()=>{if(me&&selected)map.fitBounds([[me.lat,me.lng],[selected.lat,selected.lng]],{padding:[60,60]});else if(me)map.setView([me.lat,me.lng],18)};
+$('clearBtn').onclick=()=>{selected=null;if(selMarker){map.removeLayer(selMarker);selMarker=null}if(link){map.removeLayer(link);link=null}$('selLL').textContent='Tap anywhere on map';$('selUtm').textContent='UTM: —';$('selExtra').textContent='—';updateBetween()};
+</script></body></html>
