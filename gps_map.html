@@ -9,93 +9,136 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Robo
 .panel{position:absolute;z-index:1000;left:10px;right:10px;top:10px;background:rgba(20,20,20,.91);border-radius:14px;padding:10px 12px;box-shadow:0 3px 16px #0008;font-size:13px;backdrop-filter:blur(6px)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}.box{min-width:0}.title{font-weight:800;font-size:14px;margin-bottom:3px}.blue{color:#66b8ff}.red{color:#ff7777}.line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.between{grid-column:1/-1;border-top:1px solid #555;margin-top:2px;padding-top:6px;display:flex;gap:14px;flex-wrap:wrap}
 .controls{position:absolute;z-index:1000;right:10px;bottom:24px;display:flex;flex-direction:column;gap:8px}.btn{border:0;border-radius:12px;padding:11px 13px;background:#fff;color:#111;font-weight:750;box-shadow:0 2px 10px #0007;font-size:14px}.btn:active{transform:scale(.97)}
-.hint{position:absolute;z-index:999;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.72);padding:8px 12px;border-radius:20px;font-size:12px;white-space:nowrap;pointer-events:none}.leaflet-control-zoom{margin-top:155px!important}
-@media(max-width:520px){.panel{font-size:12px}.grid{gap:7px}.between{gap:9px}.leaflet-control-zoom{margin-top:175px!important}}
+.hint{position:absolute;z-index:999;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.72);padding:8px 12px;border-radius:20px;font-size:12px;white-space:nowrap;pointer-events:none}.leaflet-control-zoom{margin-top:175px!important}
+@media(max-width:520px){.panel{font-size:12px}.grid{gap:7px}.between{gap:9px}.leaflet-control-zoom{margin-top:190px!important}}
 </style>
 </head><body>
 <div id="map"></div>
 <div class="panel"><div class="grid">
-<div class="box"><div class="title blue">● YOU — LIVE GPS</div><div id="meLL" class="line">Waiting for GPS…</div><div id="meUtm" class="line">UTM: —</div><div id="meExtra" class="line">Accuracy: —</div></div>
-<div class="box"><div class="title red">● SELECTED POINT</div><div id="selLL" class="line">Tap anywhere on map</div><div id="selUtm" class="line">UTM: —</div><div id="selExtra" class="line">—</div></div>
+<div class="box"><div class="title blue">● POINT 1 <span id="p1Mode">— LIVE GPS</span></div><div id="p1LL" class="line">Waiting for GPS…</div><div id="p1Utm" class="line">UTM: —</div><div id="p1Extra" class="line">Accuracy: —</div></div>
+<div class="box"><div class="title red">● POINT 2</div><div id="p2LL" class="line">Tap anywhere on map</div><div id="p2Utm" class="line">UTM: —</div><div id="p2Extra" class="line">Elevation: —</div></div>
 <div class="between"><span id="dist">Distance: —</span><span id="bearing">Bearing: —</span></div>
 </div></div>
-<div class="controls"><button class="btn" id="myBtn">📍 My location</button><button class="btn" id="fitBtn">↔ Show both</button><button class="btn" id="clearBtn">✕ Clear point</button></div>
-<div class="hint">Tap the map to select a point</div>
+<div class="controls"><button class="btn" id="myBtn">📍 My location</button><button class="btn" id="fitBtn">↔ Show both</button><button class="btn" id="clearBtn">✕ Clear points</button></div>
+<div class="hint" id="hint">Tap the map to select Point 2</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
 <script>
 const map=L.map('map',{zoomControl:true}).setView([31.8,34.8],8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
-let me=null, selected=null, meMarker=null, accCircle=null, selMarker=null, link=null, firstFix=true;
+
 const $=id=>document.getElementById(id), fmt=n=>Number(n).toFixed(6);
+let gps=null, gpsAccuracy=null, gpsAltitude=null, gpsSpeed=null;
+let p1=null,p2=null,p1Marker=null,p2Marker=null,accCircle=null,link=null;
+let mode='gps', firstFix=true, elevReq={p1:0,p2:0};
+
 function utm(lat,lon){
- const zone=Math.floor((lon+180)/6)+1, north=lat>=0;
+ const zone=Math.floor((lon+180)/6)+1,north=lat>=0;
  const def=`+proj=utm +zone=${zone} ${north?'':' +south'} +datum=WGS84 +units=m +no_defs`;
  try{const [e,n]=proj4('EPSG:4326',def,[lon,lat]);return `${zone}${north?'N':'S'}  E ${Math.round(e)}  N ${Math.round(n)}`;}catch(e){return '—'}
 }
 function hav(a,b){const R=6371000,p=x=>x*Math.PI/180,dLat=p(b.lat-a.lat),dLon=p(b.lng-a.lng),la1=p(a.lat),la2=p(b.lat);const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
 function bear(a,b){const p=x=>x*Math.PI/180,d=x=>x*180/Math.PI,y=Math.sin(p(b.lng-a.lng))*Math.cos(p(b.lat)),x=Math.cos(p(a.lat))*Math.sin(p(b.lat))-Math.sin(p(a.lat))*Math.cos(p(b.lat))*Math.cos(p(b.lng-a.lng));return (d(Math.atan2(y,x))+360)%360;}
-function updateBetween(){if(link){map.removeLayer(link);link=null}if(!me||!selected){$('dist').textContent='Distance: —';$('bearing').textContent='Bearing: —';return}let d=hav(me,selected);$('dist').textContent='Distance: '+(d<1000?Math.round(d)+' m':(d/1000).toFixed(2)+' km');$('bearing').textContent='Bearing: '+bear(me,selected).toFixed(1)+'°';link=L.polyline([me,selected],{weight:2,dashArray:'6 7',opacity:.75}).addTo(map);}
-let elevationRequest=0;
-async function loadElevation(ll){
- const request=++elevationRequest;
- $('selExtra').textContent='Elevation: loading…';
+
+function updateBetween(){
+ if(link){map.removeLayer(link);link=null}
+ if(!p1||!p2){$('dist').textContent='Distance: —';$('bearing').textContent='Bearing: —';return}
+ const d=hav(p1,p2);
+ $('dist').textContent='Distance: '+(d<1000?Math.round(d)+' m':(d/1000).toFixed(2)+' km');
+ $('bearing').textContent='Bearing: '+bear(p1,p2).toFixed(1)+'°';
+ link=L.polyline([p1,p2],{weight:2,dashArray:'6 7',opacity:.75}).addTo(map);
+}
+
+async function loadElevation(which,ll){
+ const req=++elevReq[which], el=$(which==='p1'?'p1Extra':'p2Extra');
+ el.textContent='Elevation: loading…';
  try{
-   const url=`https://api.trailsplits.com/tiles/v1/elevation/current/sample?encoding=mapbox&points=${encodeURIComponent(ll.lat+','+ll.lng)}`;
-   const r=await fetch(url);
-   if(!r.ok) throw new Error('HTTP '+r.status);
-   const data=await r.json();
-   if(request!==elevationRequest) return;
-   const elev=data && Array.isArray(data.points) && data.points[0] ? data.points[0].elevation_m : null;
-   $('selExtra').textContent=(elev==null||!Number.isFinite(Number(elev)))
-     ? 'Elevation: unavailable'
-     : `Elevation: ${Number(elev).toFixed(1)} m • Copernicus DEM 30 m`;
- }catch(e){
-   if(request===elevationRequest) $('selExtra').textContent='Elevation: unavailable';
- }
+  const url=`https://api.trailsplits.com/tiles/v1/elevation/current/sample?encoding=mapbox&points=${encodeURIComponent(ll.lat+','+ll.lng)}`;
+  const r=await fetch(url); if(!r.ok)throw new Error('HTTP '+r.status);
+  const data=await r.json(); if(req!==elevReq[which])return;
+  const elev=data&&Array.isArray(data.points)&&data.points[0]?data.points[0].elevation_m:null;
+  el.textContent=(elev==null||!Number.isFinite(Number(elev)))?'Elevation: unavailable':`Elevation: ${Number(elev).toFixed(1)} m • DEM 30 m`;
+ }catch(e){if(req===elevReq[which])el.textContent='Elevation: unavailable'}
 }
-function updateSelectedData(ll,fetchElevation=true){
- selected={lat:ll.lat,lng:ll.lng};
- $('selLL').textContent=`${fmt(ll.lat)}, ${fmt(ll.lng)}`;
- $('selUtm').textContent='UTM: '+utm(ll.lat,ll.lng);
- updateBetween();
- if(fetchElevation) loadElevation(ll);
-}
-function createSelectedMarker(ll){
- selMarker=L.marker(ll,{draggable:true}).addTo(map);
- let restoreMapGestures=null;
- selMarker.on('dragstart',()=>{
-   restoreMapGestures={
-     dragging:map.dragging.enabled(),
-     touchZoom:map.touchZoom && map.touchZoom.enabled(),
-     doubleClickZoom:map.doubleClickZoom.enabled(),
-     scrollWheelZoom:map.scrollWheelZoom.enabled()
-   };
-   if(map.dragging) map.dragging.disable();
-   if(map.touchZoom) map.touchZoom.disable();
-   map.doubleClickZoom.disable();
-   map.scrollWheelZoom.disable();
+
+function markerWithSafeDrag(ll,which){
+ const m=L.marker(ll,{draggable:true}).addTo(map);
+ let restore=null;
+ m.on('dragstart',()=>{
+  restore={dragging:map.dragging.enabled(),touchZoom:map.touchZoom&&map.touchZoom.enabled(),doubleClickZoom:map.doubleClickZoom.enabled(),scrollWheelZoom:map.scrollWheelZoom.enabled()};
+  if(map.dragging)map.dragging.disable(); if(map.touchZoom)map.touchZoom.disable(); map.doubleClickZoom.disable(); map.scrollWheelZoom.disable();
  });
- selMarker.on('dragend',e=>{
-   const ll=e.target.getLatLng();
-   if(restoreMapGestures){
-     if(restoreMapGestures.dragging && map.dragging) map.dragging.enable();
-     if(restoreMapGestures.touchZoom && map.touchZoom) map.touchZoom.enable();
-     if(restoreMapGestures.doubleClickZoom) map.doubleClickZoom.enable();
-     if(restoreMapGestures.scrollWheelZoom) map.scrollWheelZoom.enable();
-   }
-   restoreMapGestures=null;
-   updateSelectedData(ll,true);
+ m.on('dragend',e=>{
+  if(restore){if(restore.dragging&&map.dragging)map.dragging.enable();if(restore.touchZoom&&map.touchZoom)map.touchZoom.enable();if(restore.doubleClickZoom)map.doubleClickZoom.enable();if(restore.scrollWheelZoom)map.scrollWheelZoom.enable()}
+  restore=null;
+  const ll=e.target.getLatLng();
+  if(which==='p1')setP1Manual(ll,false); else setP2(ll,false);
  });
+ return m;
 }
-function setSelected(ll){
- if(!selMarker) createSelectedMarker(ll);
- else selMarker.setLatLng(ll);
- updateSelectedData(ll,true);
+
+function setP1Manual(ll,moveMarker=true){
+ mode='manual'; p1={lat:ll.lat,lng:ll.lng}; $('p1Mode').textContent='— MANUAL';
+ if(accCircle){map.removeLayer(accCircle);accCircle=null}
+ if(!p1Marker)p1Marker=markerWithSafeDrag(ll,'p1'); else if(moveMarker)p1Marker.setLatLng(ll);
+ if(p1Marker.dragging)p1Marker.dragging.enable();
+ $('p1LL').textContent=`${fmt(p1.lat)}, ${fmt(p1.lng)}`;$('p1Utm').textContent='UTM: '+utm(p1.lat,p1.lng);
+ loadElevation('p1',p1); updateBetween(); updateHint();
 }
-map.on('click',e=>setSelected(e.latlng));
-if(navigator.geolocation){navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude};const ll=[me.lat,me.lng];if(!meMarker){meMarker=L.circleMarker(ll,{radius:8,weight:3,fillOpacity:1}).addTo(map).bindTooltip('YOU');accCircle=L.circle(ll,{weight:1,fillOpacity:.08}).addTo(map);}else{meMarker.setLatLng(ll);accCircle.setLatLng(ll)}accCircle.setRadius(p.coords.accuracy||0);$('meLL').textContent=`${fmt(me.lat)}, ${fmt(me.lng)}`;$('meUtm').textContent='UTM: '+utm(me.lat,me.lng);let parts=[`Accuracy: ${Math.round(p.coords.accuracy)} m`];if(p.coords.altitude!=null)parts.push(`Alt: ${Math.round(p.coords.altitude)} m`);if(p.coords.speed!=null)parts.push(`Speed: ${(p.coords.speed*3.6).toFixed(1)} km/h`);$('meExtra').textContent=parts.join(' · ');updateBetween();if(firstFix){map.setView(ll,18);firstFix=false}},e=>{$('meLL').textContent='GPS error: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:15000});}else $('meLL').textContent='Geolocation not supported';
-$('myBtn').onclick=()=>{if(me)map.setView([me.lat,me.lng],18)};
-$('fitBtn').onclick=()=>{if(me&&selected)map.fitBounds([[me.lat,me.lng],[selected.lat,selected.lng]],{padding:[60,60]});else if(me)map.setView([me.lat,me.lng],18)};
-$('clearBtn').onclick=()=>{elevationRequest++;selected=null;if(selMarker){map.removeLayer(selMarker);selMarker=null}if(link){map.removeLayer(link);link=null}$('selLL').textContent='Tap anywhere on map';$('selUtm').textContent='UTM: —';$('selExtra').textContent='—';updateBetween()};
+
+function setP2(ll,moveMarker=true){
+ p2={lat:ll.lat,lng:ll.lng};
+ if(!p2Marker)p2Marker=markerWithSafeDrag(ll,'p2'); else if(moveMarker)p2Marker.setLatLng(ll);
+ $('p2LL').textContent=`${fmt(p2.lat)}, ${fmt(p2.lng)}`;$('p2Utm').textContent='UTM: '+utm(p2.lat,p2.lng);
+ loadElevation('p2',p2); updateBetween(); updateHint();
+}
+
+function useGps(){
+ if(!gps)return;
+ mode='gps'; p1={lat:gps.lat,lng:gps.lng}; $('p1Mode').textContent='— LIVE GPS';
+ if(p1Marker){map.removeLayer(p1Marker);p1Marker=null}
+ p1Marker=L.circleMarker([p1.lat,p1.lng],{radius:8,weight:3,fillOpacity:1}).addTo(map).bindTooltip('POINT 1 — GPS');
+ if(!accCircle)accCircle=L.circle([p1.lat,p1.lng],{weight:1,fillOpacity:.08}).addTo(map); else accCircle.setLatLng([p1.lat,p1.lng]);
+ accCircle.setRadius(gpsAccuracy||0);
+ $('p1LL').textContent=`${fmt(p1.lat)}, ${fmt(p1.lng)}`;$('p1Utm').textContent='UTM: '+utm(p1.lat,p1.lng);
+ let parts=[`Accuracy: ${Math.round(gpsAccuracy||0)} m`];if(gpsAltitude!=null)parts.push(`Alt: ${Math.round(gpsAltitude)} m`);if(gpsSpeed!=null)parts.push(`Speed: ${(gpsSpeed*3.6).toFixed(1)} km/h`);
+ $('p1Extra').textContent=parts.join(' · '); updateBetween(); updateHint();
+}
+
+function updateHint(){
+ if(!p1)$('hint').textContent='Tap the map to select Point 1';
+ else if(!p2)$('hint').textContent='Tap the map to select Point 2';
+ else $('hint').textContent='Drag a point, or Clear points';
+}
+
+map.on('click',e=>{
+ if(!p1){setP1Manual(e.latlng);return}
+ if(!p2){setP2(e.latlng);return}
+ // With two points already set, tapping elsewhere moves Point 2.
+ setP2(e.latlng);
+});
+
+if(navigator.geolocation){
+ navigator.geolocation.watchPosition(pos=>{
+  gps={lat:pos.coords.latitude,lng:pos.coords.longitude};gpsAccuracy=pos.coords.accuracy;gpsAltitude=pos.coords.altitude;gpsSpeed=pos.coords.speed;
+  if(mode==='gps'){useGps();if(firstFix){map.setView([gps.lat,gps.lng],18);firstFix=false}}
+ },e=>{if(mode==='gps')$('p1LL').textContent='GPS error: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+}else $('p1LL').textContent='Geolocation not supported';
+
+$('myBtn').onclick=()=>{
+ if(!gps)return;
+ useGps(); map.setView([gps.lat,gps.lng],18);
+};
+$('fitBtn').onclick=()=>{
+ if(p1&&p2)map.fitBounds([[p1.lat,p1.lng],[p2.lat,p2.lng]],{padding:[60,60]});
+ else if(p1)map.setView([p1.lat,p1.lng],18);
+};
+$('clearBtn').onclick=()=>{
+ elevReq.p1++;elevReq.p2++;mode='manual';p1=null;p2=null;
+ if(p1Marker){map.removeLayer(p1Marker);p1Marker=null}if(p2Marker){map.removeLayer(p2Marker);p2Marker=null}
+ if(accCircle){map.removeLayer(accCircle);accCircle=null}if(link){map.removeLayer(link);link=null}
+ $('p1Mode').textContent='— MANUAL';$('p1LL').textContent='Tap anywhere on map';$('p1Utm').textContent='UTM: —';$('p1Extra').textContent='Elevation: —';
+ $('p2LL').textContent='Tap after Point 1';$('p2Utm').textContent='UTM: —';$('p2Extra').textContent='Elevation: —';
+ updateBetween();updateHint();
+};
 </script></body></html>
